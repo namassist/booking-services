@@ -1,49 +1,45 @@
 # Clinic Booking Service API
 
-A secure, scalable REST API for online clinic booking with JWT authentication, role-based authorization, and double booking prevention.
+REST API untuk sistem booking klinik online dengan autentikasi JWT, otorisasi berbasis role, dan pencegahan double booking.
 
-## Features
+## Fitur Utama
 
-- **JWT Authentication** with access/refresh tokens and token rotation
-- **Role-based Authorization** (ADMIN, STAFF, PATIENT)
-- **Double Booking Prevention** using pessimistic locking
-- **Rate Limiting** (100 requests/minute per IP)
-- **Multi-clinic Support** with doctors and schedules
+- **Autentikasi JWT** dengan access/refresh token dan token rotation
+- **Otorisasi Role-based** (ADMIN, STAFF, PATIENT)
+- **Pencegahan Double Booking** (2-layer: pessimistic locking + database constraint)
+- **Rate Limiting** (100 req/menit global, 10 req/menit untuk login)
+- **Account Lockout** (kunci akun setelah 5x login gagal)
+- **Correlation ID** untuk request tracing
+- **Multi-klinik** dengan dokter dan jadwal
 
 ## Technology Stack
 
 - Java 17
 - Spring Boot 4.0.1
-- Spring Security with JWT
+- Spring Security + JWT (jjwt 0.12.6)
 - PostgreSQL + Flyway migrations
-- Bucket4j for rate limiting
-
-## Step-by-Step Guide for New Users
-
-Follow these steps to get the project running on your local machine.
-
-### Prerequisites
-
-Ensure you have the following installed:
-
-- [Java Development Kit (JDK) 17+](https://adoptium.net/)
-- [PostgreSQL](https://www.postgresql.org/download/) (or Docker)
-- [Git](https://git-scm.com/downloads)
+- Bucket4j + Caffeine untuk rate limiting
 
 ---
 
-### 1. Clone the Repository
+## Cara Menjalankan Aplikasi
 
-Open your terminal and run:
+### Prerequisites
+
+- [JDK 17+](https://adoptium.net/)
+- [PostgreSQL](https://www.postgresql.org/download/) atau Docker
+- [Git](https://git-scm.com/downloads)
+
+### 1. Clone Repository
 
 ```bash
 git clone https://github.com/your-username/booking-service.git
 cd booking-service
 ```
 
-### 2. Set Up the Database
+### 2. Setup Database
 
-You need a running PostgreSQL database. You can start one using Docker:
+**Menggunakan Docker:**
 
 ```bash
 docker run -d --name booking-postgres \
@@ -54,99 +50,122 @@ docker run -d --name booking-postgres \
   postgres:16
 ```
 
-_Or if you have PostgreSQL installed locally, create a database named `clinic`._
+**Atau PostgreSQL lokal:**
 
-### 3. Configure Environment Variables
+```sql
+CREATE DATABASE clinic;
+```
 
-The application enforces **strict configuration**. You must provide environment variables.
+### 3. Konfigurasi Environment Variables
 
-1.  Copy the example environment file:
-    ```bash
-    cp .env.example .env
-    ```
-2.  Open `.env` and fill in the values (or use the defaults provided below for local dev):
+```bash
+cp .env.example .env
+```
 
-    ```properties
-    DATABASE_URL=jdbc:postgresql://localhost:5432/clinic
-    DATABASE_USERNAME=uadmin
-    DATABASE_PASSWORD=secretpisan
-    SHOW_SQL=true
-    JWT_SECRET=c2VjdXJlLWp3dC1zZWNyZXQta2V5LWZvci1kZXZlbG9wbWVudC1vbmx5LWNoYW5nZS1pbi1wcm9kdWN0aW9u
-    JWT_ACCESS_EXPIRATION=900000
-    JWT_REFRESH_EXPIRATION=604800000
-    RATE_LIMIT_RPM=100
-    PORT=8080
-    LOG_LEVEL_SECURITY=INFO
-    LOG_LEVEL_APP=DEBUG
-    ```
+Edit `.env` dengan nilai yang sesuai (lihat [Environment Variables](#environment-variables)).
 
-### 4. Run the Application
+### 4. Jalankan Aplikasi
 
-#### Option A: Using Command Line (Linux/Mac)
-
-You need to export the variables before running because Spring Boot doesn't read `.env` by default.
+**Linux/Mac:**
 
 ```bash
 export $(cat .env | xargs) && ./mvnw spring-boot:run
 ```
 
-#### Option B: Using VS Code (Recommended)
+**VS Code:**
 
-1.  Open the project in VS Code.
-2.  If you have the **Spring Boot Extension Pack** installed, it should detect the project.
-3.  Create/Update `.vscode/launch.json` to include `"envFile": "${workspaceFolder}/.env"` in the configuration.
-4.  Press `F5` to start debugging.
+1. Install **Spring Boot Extension Pack**
+2. Tambahkan `"envFile": "${workspaceFolder}/.env"` di `.vscode/launch.json`
+3. Tekan `F5`
 
-### 5. Verify & Test (Seeded Data)
+### 5. Verifikasi
 
-When the application starts for the **first time**, a `DataSeeder` will populate the database with dummy data.
+- **API URL**: `http://localhost:8080`
+- **Swagger UI**: `http://localhost:8080/swagger-ui.html`
 
-**API URL**: `http://localhost:8080`
+**Akun Default (dari DataSeeder):**
 
-#### Default Credentials
-
-Use these accounts to log in and test:
-
-| Role        | Email                 | Password   | Notes                        |
-| ----------- | --------------------- | ---------- | ---------------------------- |
-| **Admin**   | `admin@example.com`   | `password` | Has full access              |
-| **Patient** | `patient@example.com` | `password` | Linked to patient "John Doe" |
-
-#### Default Doctors
-
-| Name            | Specialization       | Schedule                  |
-| --------------- | -------------------- | ------------------------- |
-| **Dr. Strange** | General Practitioner | Mon & Wed (09:00 - 12:00) |
-| **Dr. Doom**    | Dermatologist        | Tue & Thu (13:00 - 16:00) |
+| Role    | Email               | Password    |
+| ------- | ------------------- | ----------- |
+| Admin   | admin@example.com   | secretpisan |
+| Patient | patient@example.com | secretpisan |
 
 ---
 
-## Environment Variables Reference
+## Environment Variables
 
-| Variable                 | Description                   |
-| ------------------------ | ----------------------------- |
-| `DATABASE_URL`           | PostgreSQL JDBC URL           |
-| `DATABASE_USERNAME`      | Database username             |
-| `DATABASE_PASSWORD`      | Database password             |
-| `JWT_SECRET`             | Base64-encoded 256-bit secret |
-| `JWT_ACCESS_EXPIRATION`  | Access token TTL (ms)         |
-| `JWT_REFRESH_EXPIRATION` | Refresh token TTL (ms)        |
-| `RATE_LIMIT_RPM`         | Requests per minute limit     |
-| `PORT`                   | Server port                   |
+### Wajib (Required)
 
-## Architecture
+| Variable                 | Deskripsi                           | Contoh                                    |
+| ------------------------ | ----------------------------------- | ----------------------------------------- |
+| `DATABASE_URL`           | PostgreSQL JDBC URL                 | `jdbc:postgresql://localhost:5432/clinic` |
+| `DATABASE_USERNAME`      | Username database                   | `uadmin`                                  |
+| `DATABASE_PASSWORD`      | Password database                   | `secretpisan`                             |
+| `JWT_SECRET`             | Base64-encoded secret (min 256-bit) | `c2VjdXJlLWp3dC1zZWNyZXQta2V5Li4u`        |
+| `JWT_ACCESS_EXPIRATION`  | Access token TTL (ms)               | `900000` (15 menit)                       |
+| `JWT_REFRESH_EXPIRATION` | Refresh token TTL (ms)              | `604800000` (7 hari)                      |
+| `RATE_LIMIT_RPM`         | Rate limit global (req/menit)       | `100`                                     |
+| `PORT`                   | Port server                         | `8080`                                    |
+
+### Opsional (dengan default)
+
+| Variable                   | Deskripsi                            | Default                                       |
+| -------------------------- | ------------------------------------ | --------------------------------------------- |
+| `CORS_ALLOWED_ORIGINS`     | Daftar origin yang diizinkan (koma)  | `http://localhost:3000,http://localhost:5173` |
+| `RATE_LIMIT_AUTH_RPM`      | Rate limit endpoint auth (req/menit) | `10`                                          |
+| `JWT_ISSUER`               | JWT issuer untuk validasi            | `booking-service`                             |
+| `JWT_AUDIENCE`             | JWT audience untuk validasi          | `booking-api`                                 |
+| `MAX_FAILED_ATTEMPTS`      | Maks percobaan login sebelum lockout | `5`                                           |
+| `LOCKOUT_DURATION_MINUTES` | Durasi lockout akun (menit)          | `15`                                          |
+| `SHOW_SQL`                 | Tampilkan SQL di log                 | `false`                                       |
+| `LOG_LEVEL_SECURITY`       | Log level Spring Security            | `INFO`                                        |
+| `LOG_LEVEL_APP`            | Log level aplikasi                   | `INFO`                                        |
+
+---
+
+## Database & Migration
+
+Aplikasi menggunakan **Flyway** untuk database migration. Migration dijalankan otomatis saat aplikasi start.
+
+### Struktur Migration
+
+| File                                    | Deskripsi                             |
+| --------------------------------------- | ------------------------------------- |
+| `V1__create_users_table.sql`            | Tabel users dengan role enum          |
+| `V2__create_clinics_table.sql`          | Tabel clinics                         |
+| `V3__create_doctors_table.sql`          | Tabel doctors                         |
+| `V4__create_patients_table.sql`         | Tabel patients                        |
+| `V5__create_doctor_schedules_table.sql` | Jadwal dokter per hari                |
+| `V6__create_bookings_table.sql`         | Tabel bookings + unique partial index |
+| `V7__create_refresh_tokens_table.sql`   | Refresh token storage                 |
+| `V10__add_patients_user_id_index.sql`   | Index untuk performa                  |
+| `V11__create_login_attempts_table.sql`  | Tracking login attempts untuk lockout |
+
+### Manual Migration
+
+```bash
+./mvnw flyway:migrate
+```
+
+---
+
+## Arsitektur
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Clients                              │
 └─────────────────────────┬───────────────────────────────────┘
-                          │ HTTP/JWT
+                          │ HTTP + JWT + X-Correlation-ID
 ┌─────────────────────────▼───────────────────────────────────┐
-│                    Rate Limiting Filter                      │
+│              CorrelationIdFilter (request tracing)          │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
-│                  JWT Authentication Filter                   │
+│     RateLimitingFilter (100 RPM global, 10 RPM auth)        │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────────┐
+│          JwtAuthenticationFilter (token validation)          │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
@@ -156,25 +175,27 @@ Use these accounts to log in and test:
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
 │                       Services                               │
-│         AuthService │ BookingService (concurrency)          │
+│    AuthService (lockout) │ BookingService (concurrency)     │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
 │                      Repositories                            │
-│          with @Lock(PESSIMISTIC_WRITE)                      │
+│          @Lock(PESSIMISTIC_WRITE) untuk booking             │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
 │                     PostgreSQL                               │
-│              with unique partial indexes                     │
+│              Unique partial index + constraints              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Anti-Double Booking Strategy
+---
 
-The system uses a **two-layer protection** approach:
+## Strategi Anti-Double Booking
 
-### 1. Database Constraint (Primary)
+Sistem menggunakan **pendekatan 2 lapis (defense-in-depth)**:
+
+### Layer 1: Database Constraint (Primary)
 
 ```sql
 CREATE UNIQUE INDEX uk_bookings_no_double
@@ -182,18 +203,54 @@ ON bookings(doctor_id, booking_date, slot_start_time)
 WHERE status NOT IN ('CANCELLED');
 ```
 
-This partial unique index prevents duplicate active bookings at the database level.
+Partial unique index ini mencegah duplikasi booking aktif di level database. Jika 2 request concurrent berhasil melewati application layer, database akan menolak yang kedua dengan constraint violation.
 
-### 2. Pessimistic Locking (Application)
+### Layer 2: Pessimistic Locking (Application)
 
-The repository uses `SELECT FOR UPDATE` to acquire an exclusive lock before inserting, serializing concurrent booking attempts.
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT b FROM Booking b WHERE ...")
+Optional<Booking> findExistingBookingWithLock(...);
+```
+
+Menggunakan `SELECT FOR UPDATE` untuk mengunci row yang sudah ada, mencegah race condition untuk slot yang sama.
+
+### Cara Kerjanya
+
+| Skenario                          | Layer 1 (DB)          | Layer 2 (Lock)                | Hasil |
+| --------------------------------- | --------------------- | ----------------------------- | ----- |
+| Slot sudah terisi                 | ✅ Mencegah           | ✅ Mencegah                   | Aman  |
+| 2 request concurrent, slot kosong | ✅ Mencegah (1 gagal) | ❌ Tidak bisa lock row kosong | Aman  |
+| Lock timeout/failure              | ✅ Tetap mencegah     | -                             | Aman  |
+
+---
+
+## API Endpoints
+
+| Method | Endpoint                    | Role                        | Deskripsi               |
+| ------ | --------------------------- | --------------------------- | ----------------------- |
+| POST   | `/api/auth/register`        | Public                      | Registrasi patient baru |
+| POST   | `/api/auth/login`           | Public                      | Login                   |
+| POST   | `/api/auth/refresh`         | Public                      | Refresh access token    |
+| POST   | `/api/auth/logout`          | Public                      | Logout (revoke token)   |
+| GET    | `/api/doctors`              | Public                      | List semua dokter       |
+| GET    | `/api/doctors/{id}/slots`   | Public                      | Slot tersedia           |
+| POST   | `/api/bookings`             | Patient, Staff, Admin       | Buat booking            |
+| GET    | `/api/bookings/my`          | Patient                     | Booking saya            |
+| GET    | `/api/bookings/doctor/{id}` | Staff, Admin                | Booking per dokter      |
+| DELETE | `/api/bookings/{id}`        | Patient (own), Staff, Admin | Batalkan booking        |
+
+Dokumentasi lengkap tersedia di **Swagger UI**: `/swagger-ui.html`
+
+---
 
 ## Running Tests
 
 ```bash
-# Ensure test environment variables are set or rely on h2 in test profile
 ./mvnw test
 ```
+
+---
 
 ## License
 
