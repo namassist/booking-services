@@ -131,6 +131,16 @@ public class DataSeeder implements CommandLineRunner {
                 .build();
         userRepository.save(admin);
 
+        // Create Staff
+        User staff = User.builder()
+                .email("staff@example.com")
+                .passwordHash(passwordEncoder.encode("secretpisan"))
+                .name("Staff User")
+                .role(UserRole.STAFF)
+                .isActive(true)
+                .build();
+        userRepository.save(staff);
+
         // Create Patient User
         User patientUser = User.builder()
                 .email("patient@example.com")
