@@ -9,6 +9,8 @@ import com.example.booking_service.exception.ResourceNotFoundException;
 import com.example.booking_service.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -179,6 +181,15 @@ public class BookingService {
     }
 
     /**
+     * Get bookings for a doctor on a specific date (paginated).
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingResponse> getBookingsByDoctorAndDate(UUID doctorId, LocalDate date, Pageable pageable) {
+        return bookingRepository.findByDoctorIdAndBookingDateOrderBySlotStartTimeAsc(doctorId, date, pageable)
+                .map(this::mapToResponse);
+    }
+
+    /**
      * Get bookings on a specific date (all doctors).
      */
     @Transactional(readOnly = true)
@@ -187,6 +198,15 @@ public class BookingService {
                 .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Get bookings on a specific date (paginated).
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingResponse> getBookingsByDate(LocalDate date, Pageable pageable) {
+        return bookingRepository.findByBookingDateOrderBySlotStartTimeAsc(date, pageable)
+                .map(this::mapToResponse);
     }
 
     /**
@@ -201,6 +221,15 @@ public class BookingService {
     }
 
     /**
+     * Get bookings for a patient (paginated).
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingResponse> getBookingsByPatient(UUID patientId, Pageable pageable) {
+        return bookingRepository.findByPatientIdOrderByBookingDateDescSlotStartTimeDesc(patientId, pageable)
+                .map(this::mapToResponse);
+    }
+
+    /**
      * Get bookings for current user (patient).
      */
     @Transactional(readOnly = true)
@@ -209,6 +238,17 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Patient", "userId", userId));
         
         return getBookingsByPatient(patient.getId());
+    }
+
+    /**
+     * Get bookings for current user (patient, paginated).
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingResponse> getMyBookings(UUID userId, Pageable pageable) {
+        Patient patient = patientRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Patient", "userId", userId));
+        
+        return getBookingsByPatient(patient.getId(), pageable);
     }
 
     /**

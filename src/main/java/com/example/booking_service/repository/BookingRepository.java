@@ -3,6 +3,8 @@ package com.example.booking_service.repository;
 import com.example.booking_service.entity.Booking;
 import com.example.booking_service.entity.BookingStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -69,14 +71,29 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     );
 
     /**
-     * Find all bookings for a patient.
+     * Find all bookings for a patient (non-paginated).
      */
     List<Booking> findByPatientIdOrderByBookingDateDescSlotStartTimeDesc(UUID patientId);
 
     /**
-     * Find all bookings on a specific date.
+     * Find all bookings for a patient (paginated).
+     */
+    Page<Booking> findByPatientIdOrderByBookingDateDescSlotStartTimeDesc(UUID patientId, Pageable pageable);
+
+    /**
+     * Find all bookings on a specific date (non-paginated).
      */
     List<Booking> findByBookingDateOrderBySlotStartTimeAsc(LocalDate bookingDate);
+
+    /**
+     * Find all bookings on a specific date (paginated).
+     */
+    Page<Booking> findByBookingDateOrderBySlotStartTimeAsc(LocalDate bookingDate, Pageable pageable);
+
+    /**
+     * Find bookings for a doctor on a date (paginated).
+     */
+    Page<Booking> findByDoctorIdAndBookingDateOrderBySlotStartTimeAsc(UUID doctorId, LocalDate bookingDate, Pageable pageable);
 
     /**
      * Find bookings for a patient within a date range.

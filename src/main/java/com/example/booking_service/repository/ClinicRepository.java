@@ -1,6 +1,8 @@
 package com.example.booking_service.repository;
 
 import com.example.booking_service.entity.Clinic;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +19,11 @@ public interface ClinicRepository extends JpaRepository<Clinic, UUID> {
      * Find all active clinics.
      */
     List<Clinic> findByIsActiveTrue();
+
+    /**
+     * Find all active clinics (paginated).
+     */
+    Page<Clinic> findByIsActiveTrue(Pageable pageable);
 
     /**
      * Find clinics by name containing (case-insensitive search).
