@@ -155,6 +155,7 @@
                   "pm.test('Got new tokens', () => {",
                   "  var json = pm.response.json();",
                   "  pm.expect(json.data.accessToken).to.be.a('string');",
+                  "  pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -172,6 +173,68 @@
               "raw": "{{baseUrl}}/api/auth/refresh",
               "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "1.6 Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Logout success', () => {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "1.7 Logout All Devices",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Logout all success', () => {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json.success).to.equal(true);",
+                  "  pm.expect(json.message).to.include('all devices');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout-all"]
             }
           }
         }
