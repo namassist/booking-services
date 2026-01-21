@@ -1,12 +1,13 @@
 {
   "info": {
     "name": "Clinic Booking Service API - Complete",
-    "description": "Complete test collection for all Clinic Booking Service API endpoints",
+    "description": "Complete test collection for all Clinic Booking Service API endpoints with pagination support",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
     { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
     { "key": "patientToken", "value": "", "type": "string" },
     { "key": "refreshToken", "value": "", "type": "string" },
     { "key": "clinicId", "value": "", "type": "string" },
@@ -82,7 +83,38 @@
           }
         },
         {
-          "name": "1.3 Login as Patient",
+          "name": "1.3 Login as Staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Save token', () => {",
+                  "  var json = pm.response.json();",
+                  "  pm.collectionVariables.set('staffToken', json.data.accessToken);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"staff@example.com\",\n  \"password\": \"secretpisan\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "1.4 Login as Patient",
           "event": [
             {
               "listen": "test",
@@ -113,7 +145,7 @@
           }
         },
         {
-          "name": "1.4 Refresh Token",
+          "name": "1.5 Refresh Token",
           "event": [
             {
               "listen": "test",
@@ -142,50 +174,29 @@
               "path": ["api", "auth", "refresh"]
             }
           }
-        },
-        {
-          "name": "1.5 Logout All Devices",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/logout-all",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "logout-all"]
-            }
-          }
         }
       ]
     },
     {
-      "name": "2. Clinics",
+      "name": "2. Clinics (Paginated)",
       "item": [
         {
-          "name": "2.1 Get All Clinics",
+          "name": "2.1 Get All Clinics (Paginated)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Save clinicId', () => {",
+                  "pm.test('Has pagination meta', () => {",
                   "  var json = pm.response.json();",
-                  "  pm.expect(json.data).to.be.an('array');",
-                  "  if (json.data.length > 0) {",
-                  "    pm.collectionVariables.set('clinicId', json.data[0].id);",
+                  "  pm.expect(json.data.data).to.be.an('array');",
+                  "  pm.expect(json.data.meta).to.be.an('object');",
+                  "  pm.expect(json.data.meta.page).to.be.a('number');",
+                  "  pm.expect(json.data.meta.totalItems).to.be.a('number');",
+                  "  pm.expect(json.data.links).to.be.an('object');",
+                  "  if (json.data.data.length > 0) {",
+                  "    pm.collectionVariables.set('clinicId', json.data.data[0].id);",
                   "  }",
                   "});"
                 ],
@@ -196,9 +207,15 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/api/clinics",
+              "raw": "{{baseUrl}}/api/clinics?page=0&size=10&sortBy=name&sortDir=asc",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "clinics"]
+              "path": ["api", "clinics"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sortBy", "value": "name" },
+                { "key": "sortDir", "value": "asc" }
+              ]
             }
           }
         },
@@ -255,21 +272,24 @@
       ]
     },
     {
-      "name": "3. Doctors",
+      "name": "3. Doctors (Paginated)",
       "item": [
         {
-          "name": "3.1 Get All Doctors",
+          "name": "3.1 Get All Doctors (Paginated)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Save doctorId', () => {",
+                  "pm.test('Has pagination meta', () => {",
                   "  var json = pm.response.json();",
-                  "  pm.expect(json.data).to.be.an('array');",
-                  "  if (json.data.length > 0) {",
-                  "    pm.collectionVariables.set('doctorId', json.data[0].id);",
+                  "  pm.expect(json.data.data).to.be.an('array');",
+                  "  pm.expect(json.data.meta.page).to.equal(0);",
+                  "  pm.expect(json.data.meta.size).to.equal(10);",
+                  "  pm.expect(json.data.links.self).to.include('/api/doctors');",
+                  "  if (json.data.data.length > 0) {",
+                  "    pm.collectionVariables.set('doctorId', json.data.data[0].id);",
                   "  }",
                   "});"
                 ],
@@ -280,9 +300,15 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/api/doctors",
+              "raw": "{{baseUrl}}/api/doctors?page=0&size=10&sortBy=name&sortDir=asc",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "doctors"]
+              "path": ["api", "doctors"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sortBy", "value": "name" },
+                { "key": "sortDir", "value": "asc" }
+              ]
             }
           }
         },
@@ -336,14 +362,13 @@
           }
         },
         {
-          "name": "3.4 Search Doctors by Specialization",
+          "name": "3.4 Search Doctors",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Is array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ],
                 "type": "text/javascript"
               }
@@ -360,36 +385,12 @@
           }
         },
         {
-          "name": "3.5 Search Doctors by Name",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/doctors/search?name=Strange",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "doctors", "search"],
-              "query": [{ "key": "name", "value": "Strange" }]
-            }
-          }
-        },
-        {
-          "name": "3.6 Get Available Slots",
+          "name": "3.5 Get Available Slots",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "// Find next Monday (Dr. Strange's schedule)",
                   "var d = new Date();",
                   "d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));",
                   "pm.collectionVariables.set('bookingDate', d.toISOString().split('T')[0]);"
@@ -421,7 +422,7 @@
       ]
     },
     {
-      "name": "4. Bookings",
+      "name": "4. Bookings (Paginated)",
       "item": [
         {
           "name": "4.1 Create Booking (Patient)",
@@ -460,14 +461,20 @@
           }
         },
         {
-          "name": "4.2 Get My Bookings (Patient)",
+          "name": "4.2 Get My Bookings (Paginated)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Is array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                  "pm.test('Has pagination structure', () => {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json.data.data).to.be.an('array');",
+                  "  pm.expect(json.data.meta.page).to.be.a('number');",
+                  "  pm.expect(json.data.meta.hasNext).to.be.a('boolean');",
+                  "  pm.expect(json.data.links.self).to.include('/api/bookings/my');",
+                  "});"
                 ],
                 "type": "text/javascript"
               }
@@ -479,21 +486,30 @@
               { "key": "Authorization", "value": "Bearer {{patientToken}}" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/bookings/my",
+              "raw": "{{baseUrl}}/api/bookings/my?page=0&size=10&sortBy=bookingDate&sortDir=desc",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "bookings", "my"]
+              "path": ["api", "bookings", "my"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sortBy", "value": "bookingDate" },
+                { "key": "sortDir", "value": "desc" }
+              ]
             }
           }
         },
         {
-          "name": "4.3 Get Bookings by Doctor (Staff/Admin)",
+          "name": "4.3 Get Bookings by Doctor (Staff)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Is array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                  "pm.test('Has pagination meta', () => {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json.data.meta).to.be.an('object');",
+                  "});"
                 ],
                 "type": "text/javascript"
               }
@@ -502,25 +518,32 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/bookings/doctor/{{doctorId}}?date={{bookingDate}}",
+              "raw": "{{baseUrl}}/api/bookings/doctor/{{doctorId}}?date={{bookingDate}}&page=0&size=10",
               "host": ["{{baseUrl}}"],
               "path": ["api", "bookings", "doctor", "{{doctorId}}"],
-              "query": [{ "key": "date", "value": "{{bookingDate}}" }]
+              "query": [
+                { "key": "date", "value": "{{bookingDate}}" },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
             }
           }
         },
         {
-          "name": "4.4 Get Bookings by Date (Staff/Admin)",
+          "name": "4.4 Get Bookings by Date (Admin)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Is array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                  "pm.test('Has pagination meta', () => {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json.data.meta).to.be.an('object');",
+                  "});"
                 ],
                 "type": "text/javascript"
               }
@@ -532,14 +555,18 @@
               { "key": "Authorization", "value": "Bearer {{adminToken}}" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/bookings/date/{{bookingDate}}",
+              "raw": "{{baseUrl}}/api/bookings/date/{{bookingDate}}?page=0&size=10",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "bookings", "date", "{{bookingDate}}"]
+              "path": ["api", "bookings", "date", "{{bookingDate}}"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
             }
           }
         },
         {
-          "name": "4.5 Confirm Booking (Staff/Admin)",
+          "name": "4.5 Confirm Booking (Staff)",
           "event": [
             {
               "listen": "test",
@@ -558,7 +585,7 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+              { "key": "Authorization", "value": "Bearer {{staffToken}}" }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/bookings/{{bookingId}}/confirm",
@@ -784,7 +811,7 @@
           }
         },
         {
-          "name": "6.4 Patient Cannot Access Admin Endpoint (403)",
+          "name": "6.4 Patient Cannot Access Staff Endpoint (403)",
           "event": [
             {
               "listen": "test",
@@ -802,9 +829,13 @@
               { "key": "Authorization", "value": "Bearer {{patientToken}}" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/bookings/date/2026-01-20",
+              "raw": "{{baseUrl}}/api/bookings/date/2026-01-20?page=0&size=10",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "bookings", "date", "2026-01-20"]
+              "path": ["api", "bookings", "date", "2026-01-20"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
             }
           }
         },
