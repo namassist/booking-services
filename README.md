@@ -191,11 +191,89 @@ Aplikasi menggunakan **Flyway** untuk database migration. Migration dijalankan o
 
 ---
 
+## Booking Conditions & Validation
+
+### Kondisi Booking yang Valid
+
+Untuk membuat booking, semua kondisi berikut harus terpenuhi:
+
+| Kondisi             | Deskripsi                            | Error Jika Gagal                                         |
+| ------------------- | ------------------------------------ | -------------------------------------------------------- |
+| **Dokter aktif**    | `doctor.isActive = true`             | "Doctor is not available for booking"                    |
+| **Tanggal valid**   | Tidak di masa lalu                   | "Booking date must be in the future"                     |
+| **Maks 90 hari**    | Tidak lebih dari 90 hari ke depan    | "Booking date cannot be more than 90 days in the future" |
+| **Jadwal tersedia** | Dokter punya jadwal di hari tersebut | "Doctor is not available on this day"                    |
+| **Slot aligned**    | Waktu harus tepat pada grid jadwal   | "Slots must start at scheduled intervals"                |
+| **Tidak overlap**   | Tidak bentrok dengan booking lain    | "This time slot conflicts with an existing booking"      |
+
+### Slot Alignment Validation
+
+Sistem **hanya menerima waktu yang tepat pada grid jadwal dokter**, bukan waktu arbitrary.
+
+**Contoh:** Jadwal dokter 09:00-12:00 dengan durasi slot 30 menit.
+
+| Waktu Request | Status     | Alasan                                   |
+| ------------- | ---------- | ---------------------------------------- |
+| 09:00         | ✅ Valid   | Tepat pada grid                          |
+| 09:30         | ✅ Valid   | Tepat pada grid                          |
+| 10:00         | ✅ Valid   | Tepat pada grid                          |
+| **09:15**     | ❌ Ditolak | Tidak pada grid (antara 09:00 dan 09:30) |
+| **09:45**     | ❌ Ditolak | Tidak pada grid                          |
+| **10:10**     | ❌ Ditolak | Tidak pada grid                          |
+
+### Overlap Detection
+
+Sistem mendeteksi **semua jenis overlap waktu**, bukan hanya exact match.
+
+```
+Overlap Rule: (A.start < B.end) AND (A.end > B.start)
+```
+
+**Contoh:** Booking existing 10:00-10:30
+
+| Request Baru | Overlap? | Keterangan                                 |
+| ------------ | -------- | ------------------------------------------ |
+| 10:00-10:30  | ✅ Ya    | Exact same time                            |
+| 09:30-10:00  | ❌ Tidak | Berakhir tepat saat existing mulai         |
+| 10:30-11:00  | ❌ Tidak | Mulai tepat saat existing berakhir         |
+| 09:45-10:15  | ✅ Ya    | Partial overlap (start before, end during) |
+| 10:15-10:45  | ✅ Ya    | Partial overlap (start during, end after)  |
+
+---
+
 ## Strategi Anti-Double Booking
 
-Sistem menggunakan **pendekatan 2 lapis (defense-in-depth)**:
+Sistem menggunakan **pendekatan 3 lapis (defense-in-depth)**:
 
-### Layer 1: Database Constraint (Primary)
+### Layer 1: Slot Alignment (Application)
+
+```java
+// BookingService.isValidSlotTime()
+// Memvalidasi waktu request tepat pada grid jadwal
+LocalTime current = schedule.getStartTime();
+while (current.plusMinutes(slotDuration).isBefore(endTime)) {
+    if (current.equals(requestedTime)) return true;
+    current = current.plusMinutes(slotDuration);
+}
+return false; // Reject unaligned times
+```
+
+Mencegah input waktu arbitrary seperti 10:15 yang bisa bypass unique index.
+
+### Layer 2: Overlap Detection with Lock (Application)
+
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT b FROM Booking b WHERE b.doctor.id = :doctorId " +
+       "AND b.slotStartTime < :newEndTime " +
+       "AND b.slotEndTime > :newStartTime " +
+       "AND b.status NOT IN ('CANCELLED')")
+Optional<Booking> findOverlappingBookingWithLock(...);
+```
+
+Mendeteksi overlap waktu untuk booking yang sudah ada dengan pessimistic lock.
+
+### Layer 3: Database Constraint (Final Safety Net)
 
 ```sql
 CREATE UNIQUE INDEX uk_bookings_no_double
@@ -203,42 +281,111 @@ ON bookings(doctor_id, booking_date, slot_start_time)
 WHERE status NOT IN ('CANCELLED');
 ```
 
-Partial unique index ini mencegah duplikasi booking aktif di level database. Jika 2 request concurrent berhasil melewati application layer, database akan menolak yang kedua dengan constraint violation.
+Partial unique index mencegah duplikasi di level database, menangkap race condition yang lolos dari application layer.
 
-### Layer 2: Pessimistic Locking (Application)
+### Cara Kerjanya (Skenario)
 
-```java
-@Lock(LockModeType.PESSIMISTIC_WRITE)
-@Query("SELECT b FROM Booking b WHERE ...")
-Optional<Booking> findExistingBookingWithLock(...);
+#### Skenario 1: User input waktu tidak valid (09:15)
+
+```
+User request: booking jam 09:15 (jadwal dokter 30 menit)
+
+[Layer 1] Slot Alignment Check
+    ↓ 09:15 tidak ada di grid (09:00, 09:30, 10:00...)
+    ↓ ❌ REJECT → Error: "Slots must start at scheduled intervals"
+
+Hasil: Request ditolak di awal, tidak sampai ke database
 ```
 
-Menggunakan `SELECT FOR UPDATE` untuk mengunci row yang sudah ada, mencegah race condition untuk slot yang sama.
+#### Skenario 2: Slot sudah ada booking
 
-### Cara Kerjanya
+```
+User A sudah booking jam 09:00-09:30
+User B request: booking jam 09:00
 
-| Skenario                          | Layer 1 (DB)          | Layer 2 (Lock)                | Hasil |
-| --------------------------------- | --------------------- | ----------------------------- | ----- |
-| Slot sudah terisi                 | ✅ Mencegah           | ✅ Mencegah                   | Aman  |
-| 2 request concurrent, slot kosong | ✅ Mencegah (1 gagal) | ❌ Tidak bisa lock row kosong | Aman  |
-| Lock timeout/failure              | ✅ Tetap mencegah     | -                             | Aman  |
+[Layer 1] Slot Alignment Check
+    ↓ 09:00 valid ✓
+
+[Layer 2] Overlap Detection
+    ↓ Query: ada booking 09:00-09:30 yang overlap dengan 09:00-09:30?
+    ↓ Ditemukan booking User A
+    ↓ ❌ REJECT → Error: "conflicts with existing booking 09:00 to 09:30"
+
+Hasil: Request ditolak, User A tetap punya booking
+```
+
+#### Skenario 3: Dua user booking bersamaan (Race Condition)
+
+```
+Slot 09:00 masih kosong
+User A dan B klik booking 09:00 di waktu yang PERSIS sama
+
+[Layer 1] Keduanya pass ✓
+
+[Layer 2] Overlap Detection
+    ↓ User A: Query → tidak ada booking → pass ✓
+    ↓ User B: Query → tidak ada booking → pass ✓
+    (Lock tidak efektif karena tidak ada row untuk dikunci)
+
+[Layer 3] Database Constraint
+    ↓ User A: INSERT → Success ✓
+    ↓ User B: INSERT → ❌ UNIQUE CONSTRAINT VIOLATION
+    ↓ Error ditangkap → "Slot just became unavailable"
+
+Hasil: User A berhasil, User B gagal dengan pesan error yang jelas
+```
+
+#### Ringkasan
+
+| Serangan / Skenario                    | Ditangkap Oleh              | Hasil                 |
+| -------------------------------------- | --------------------------- | --------------------- |
+| Input waktu sembarangan (09:15, 10:17) | Layer 1 - Slot Alignment    | ❌ Ditolak            |
+| Booking saat slot sudah terisi         | Layer 2 - Overlap Detection | ❌ Ditolak            |
+| Partial overlap (09:45 vs 10:00-10:30) | Layer 2 - Overlap Detection | ❌ Ditolak            |
+| Race condition (2 user bersamaan)      | Layer 3 - DB Constraint     | 1 berhasil, 1 ditolak |
 
 ---
 
 ## API Endpoints
 
-| Method | Endpoint                    | Role                        | Deskripsi               |
-| ------ | --------------------------- | --------------------------- | ----------------------- |
-| POST   | `/api/auth/register`        | Public                      | Registrasi patient baru |
-| POST   | `/api/auth/login`           | Public                      | Login                   |
-| POST   | `/api/auth/refresh`         | Public                      | Refresh access token    |
-| POST   | `/api/auth/logout`          | Public                      | Logout (revoke token)   |
-| GET    | `/api/doctors`              | Public                      | List semua dokter       |
-| GET    | `/api/doctors/{id}/slots`   | Public                      | Slot tersedia           |
-| POST   | `/api/bookings`             | Patient, Staff, Admin       | Buat booking            |
-| GET    | `/api/bookings/my`          | Patient                     | Booking saya            |
-| GET    | `/api/bookings/doctor/{id}` | Staff, Admin                | Booking per dokter      |
-| DELETE | `/api/bookings/{id}`        | Patient (own), Staff, Admin | Batalkan booking        |
+### Authentication (`/api/auth`)
+
+| Method | Endpoint               | Auth   | Deskripsi                            |
+| ------ | ---------------------- | ------ | ------------------------------------ |
+| POST   | `/api/auth/register`   | Public | Registrasi patient baru              |
+| POST   | `/api/auth/login`      | Public | Login, return access & refresh token |
+| POST   | `/api/auth/refresh`    | Public | Refresh access token                 |
+| POST   | `/api/auth/logout`     | Public | Logout (revoke refresh token)        |
+| POST   | `/api/auth/logout-all` | Bearer | Logout dari semua device             |
+
+### Doctors (`/api/doctors`)
+
+| Method | Endpoint                                            | Auth   | Deskripsi                            |
+| ------ | --------------------------------------------------- | ------ | ------------------------------------ |
+| GET    | `/api/doctors`                                      | Public | List semua dokter (paginated)        |
+| GET    | `/api/doctors/{id}`                                 | Public | Detail dokter                        |
+| GET    | `/api/doctors/{id}/available-slots?date=YYYY-MM-DD` | Public | Slot tersedia untuk tanggal tertentu |
+| GET    | `/api/doctors/clinic/{clinicId}`                    | Public | Dokter per klinik                    |
+| GET    | `/api/doctors/search?name=X&specialization=Y`       | Public | Cari dokter                          |
+
+### Clinics (`/api/clinics`)
+
+| Method | Endpoint                     | Auth   | Deskripsi                     |
+| ------ | ---------------------------- | ------ | ----------------------------- |
+| GET    | `/api/clinics`               | Public | List semua klinik (paginated) |
+| GET    | `/api/clinics/{id}`          | Public | Detail klinik                 |
+| GET    | `/api/clinics/search?name=X` | Public | Cari klinik                   |
+
+### Bookings (`/api/bookings`)
+
+| Method | Endpoint                                    | Auth                        | Deskripsi                    |
+| ------ | ------------------------------------------- | --------------------------- | ---------------------------- |
+| POST   | `/api/bookings`                             | Patient, Staff, Admin       | Buat booking baru            |
+| GET    | `/api/bookings/my`                          | Patient                     | Booking saya (paginated)     |
+| GET    | `/api/bookings/doctor/{id}?date=YYYY-MM-DD` | Staff, Admin                | Booking per dokter & tanggal |
+| GET    | `/api/bookings/date/{date}`                 | Staff, Admin                | Semua booking per tanggal    |
+| DELETE | `/api/bookings/{id}?reason=X`               | Patient (own), Staff, Admin | Batalkan booking             |
+| PUT    | `/api/bookings/{id}/confirm`                | Staff, Admin                | Konfirmasi booking           |
 
 Dokumentasi lengkap tersedia di **Swagger UI**: `/swagger-ui.html`
 
