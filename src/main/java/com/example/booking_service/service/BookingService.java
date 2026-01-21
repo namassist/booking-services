@@ -74,29 +74,34 @@ public class BookingService {
             throw new IllegalArgumentException("Doctor is not available on this day");
         }
 
-        // Find the applicable schedule and validate the time slot
+        // Find the applicable schedule and STRICTLY validate the time slot alignment
         DoctorSchedule applicableSchedule = null;
         for (DoctorSchedule schedule : schedules) {
-            if (!request.getSlotStartTime().isBefore(schedule.getStartTime()) &&
-                request.getSlotStartTime().plusMinutes(schedule.getSlotDurationMinutes()).isBefore(schedule.getEndTime().plusSeconds(1))) {
+            // Check if requested time is EXACTLY on the slot grid (not arbitrary like 10:15)
+            if (isValidSlotTime(request.getSlotStartTime(), schedule)) {
                 applicableSchedule = schedule;
                 break;
             }
         }
 
         if (applicableSchedule == null) {
-            throw new IllegalArgumentException("Requested time slot is not within doctor's schedule");
+            throw new IllegalArgumentException(
+                    "Requested time slot is not valid. Slots must start at scheduled intervals (e.g., 09:00, 09:30, 10:00)");
         }
 
         LocalTime slotEndTime = request.getSlotStartTime().plusMinutes(applicableSchedule.getSlotDurationMinutes());
 
-        // CRITICAL: Acquire pessimistic lock and check for existing booking
-        bookingRepository.findExistingBookingWithLock(
+        // CRITICAL: Check for ANY overlapping booking (not just exact time match)
+        // This prevents partial overlaps like booking 10:15 when 10:00 is already booked
+        bookingRepository.findOverlappingBookingWithLock(
                 doctor.getId(),
                 request.getBookingDate(),
-                request.getSlotStartTime()
+                request.getSlotStartTime(),
+                slotEndTime
         ).ifPresent(existing -> {
-            throw new BookingConflictException("This time slot is already booked");
+            throw new BookingConflictException(
+                    "This time slot conflicts with an existing booking from " + 
+                    existing.getSlotStartTime() + " to " + existing.getSlotEndTime());
         });
 
         // Create the booking
@@ -337,5 +342,29 @@ public class BookingService {
                 .clinicId(clinic.getId())
                 .clinicName(clinic.getName())
                 .build();
+    }
+
+    /**
+     * Validate that the requested slot time is EXACTLY on the schedule's slot grid.
+     * This prevents arbitrary times like 10:15 when slots are at 10:00, 10:30, etc.
+     * 
+     * @param requestedTime The time to validate
+     * @param schedule The doctor's schedule
+     * @return true if the time is valid (on the grid), false otherwise
+     */
+    private boolean isValidSlotTime(LocalTime requestedTime, DoctorSchedule schedule) {
+        LocalTime current = schedule.getStartTime();
+        LocalTime end = schedule.getEndTime();
+        int slotDuration = schedule.getSlotDurationMinutes();
+        
+        // Walk through all valid slot times and check for exact match
+        while (current.plusMinutes(slotDuration).isBefore(end.plusSeconds(1))) {
+            if (current.equals(requestedTime)) {
+                return true; // Found exact match on the grid
+            }
+            current = current.plusMinutes(slotDuration);
+        }
+        
+        return false; // Requested time is not on the slot grid
     }
 }

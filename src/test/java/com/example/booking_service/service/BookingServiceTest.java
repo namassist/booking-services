@@ -122,7 +122,7 @@ class BookingServiceTest {
         when(patientRepository.findByUserId(userId)).thenReturn(Optional.of(patient));
         when(scheduleRepository.findByDoctorIdAndDayOfWeekAndIsActiveTrue(eq(doctorId), any()))
                 .thenReturn(List.of(schedule));
-        when(bookingRepository.findExistingBookingWithLock(any(), any(), any()))
+        when(bookingRepository.findOverlappingBookingWithLock(any(), any(), any(), any()))
                 .thenReturn(Optional.empty());
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> {
             Booking b = inv.getArgument(0);
@@ -153,13 +153,13 @@ class BookingServiceTest {
         when(patientRepository.findByUserId(userId)).thenReturn(Optional.of(patient));
         when(scheduleRepository.findByDoctorIdAndDayOfWeekAndIsActiveTrue(eq(doctorId), any()))
                 .thenReturn(List.of(schedule));
-        when(bookingRepository.findExistingBookingWithLock(any(), any(), any()))
+        when(bookingRepository.findOverlappingBookingWithLock(any(), any(), any(), any()))
                 .thenReturn(Optional.of(booking)); // Slot already booked
 
         // Act & Assert
         assertThatThrownBy(() -> bookingService.createBooking(request, userId))
                 .isInstanceOf(BookingConflictException.class)
-                .hasMessageContaining("already booked");
+                .hasMessageContaining("conflicts with an existing booking");
     }
 
     @Test
@@ -216,6 +216,62 @@ class BookingServiceTest {
         assertThatThrownBy(() -> bookingService.createBooking(request, userId))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not available");
+    }
+
+    @Test
+    @DisplayName("createBooking - Rejects unaligned slot time (e.g., 09:15 when slots are 30min)")
+    void createBooking_UnalignedSlotTime_ThrowsBadRequest() {
+        // Arrange - Schedule is 09:00-12:00 with 30min slots
+        // Valid times: 09:00, 09:30, 10:00, 10:30, 11:00, 11:30
+        // Invalid: 09:15 (not on the grid)
+        LocalDate nextMonday = getNextMonday();
+        CreateBookingRequest request = new CreateBookingRequest();
+        request.setDoctorId(doctorId);
+        request.setBookingDate(nextMonday);
+        request.setSlotStartTime(LocalTime.of(9, 15)); // INVALID - not aligned to 30min grid
+
+        when(doctorRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(patientRepository.findByUserId(userId)).thenReturn(Optional.of(patient));
+        when(scheduleRepository.findByDoctorIdAndDayOfWeekAndIsActiveTrue(eq(doctorId), any()))
+                .thenReturn(List.of(schedule)); // 09:00-12:00, 30min slots
+
+        // Act & Assert
+        assertThatThrownBy(() -> bookingService.createBooking(request, userId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("scheduled intervals");
+    }
+
+    @Test
+    @DisplayName("createBooking - Rejects when overlapping booking exists")
+    void createBooking_OverlappingBooking_ThrowsConflict() {
+        // Arrange - Existing booking at 09:00-09:30, trying to book 09:00 again
+        LocalDate nextMonday = getNextMonday();
+        CreateBookingRequest request = new CreateBookingRequest();
+        request.setDoctorId(doctorId);
+        request.setBookingDate(nextMonday);
+        request.setSlotStartTime(LocalTime.of(9, 0));
+
+        Booking existingBooking = Booking.builder()
+                .id(UUID.randomUUID())
+                .doctor(doctor)
+                .patient(patient)
+                .bookingDate(nextMonday)
+                .slotStartTime(LocalTime.of(9, 0))
+                .slotEndTime(LocalTime.of(9, 30))
+                .status(BookingStatus.CONFIRMED)
+                .build();
+
+        when(doctorRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(patientRepository.findByUserId(userId)).thenReturn(Optional.of(patient));
+        when(scheduleRepository.findByDoctorIdAndDayOfWeekAndIsActiveTrue(eq(doctorId), any()))
+                .thenReturn(List.of(schedule));
+        when(bookingRepository.findOverlappingBookingWithLock(any(), any(), any(), any()))
+                .thenReturn(Optional.of(existingBooking)); // Overlap detected!
+
+        // Act & Assert
+        assertThatThrownBy(() -> bookingService.createBooking(request, userId))
+                .isInstanceOf(BookingConflictException.class)
+                .hasMessageContaining("conflicts with an existing booking");
     }
 
     @Test

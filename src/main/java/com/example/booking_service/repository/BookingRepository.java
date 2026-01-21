@@ -22,7 +22,6 @@ import java.util.UUID;
  */
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, UUID> {
-
     /**
      * Find existing booking with pessimistic lock to prevent double booking.
      * This is the CRITICAL method for concurrency control.
@@ -36,6 +35,29 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("doctorId") UUID doctorId,
             @Param("bookingDate") LocalDate bookingDate,
             @Param("slotStartTime") LocalTime slotStartTime
+    );
+
+    /**
+     * Find ANY overlapping booking with pessimistic lock.
+     * CRITICAL: This detects partial overlaps, not just exact time matches.
+     * 
+     * Overlap detection logic: Two time ranges overlap if:
+     * (A.start < B.end) AND (A.end > B.start)
+     * 
+     * Example: Existing booking 10:00-10:30, new request 10:15-10:45
+     * - 10:15 < 10:30 ✓ AND 10:45 > 10:00 ✓ = OVERLAP DETECTED
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Booking b WHERE b.doctor.id = :doctorId " +
+           "AND b.bookingDate = :bookingDate " +
+           "AND b.slotStartTime < :newSlotEndTime " +
+           "AND b.slotEndTime > :newSlotStartTime " +
+           "AND b.status NOT IN ('CANCELLED')")
+    Optional<Booking> findOverlappingBookingWithLock(
+            @Param("doctorId") UUID doctorId,
+            @Param("bookingDate") LocalDate bookingDate,
+            @Param("newSlotStartTime") LocalTime newSlotStartTime,
+            @Param("newSlotEndTime") LocalTime newSlotEndTime
     );
 
     /**
