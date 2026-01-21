@@ -191,6 +191,120 @@ Aplikasi menggunakan **Flyway** untuk database migration. Migration dijalankan o
 
 ---
 
+## User Roles & Access Control
+
+Sistem menggunakan 3 role dengan hierarki akses:
+
+| Role        | Deskripsi              | Booking Access             |
+| ----------- | ---------------------- | -------------------------- |
+| **PATIENT** | Pasien (self-register) | Booking untuk diri sendiri |
+| **STAFF**   | Staf klinik            | Booking untuk semua pasien |
+| **ADMIN**   | Administrator          | Full access                |
+
+### Endpoint Access Matrix
+
+| Endpoint                         | PATIENT | STAFF | ADMIN |
+| -------------------------------- | :-----: | :---: | :---: |
+| `POST /api/bookings`             |   ✅    |  ✅   |  ✅   |
+| `GET /api/bookings/my`           |   ✅    |  ✅   |  ✅   |
+| `DELETE /api/bookings/{id}`      |  ✅\*   |  ✅   |  ✅   |
+| `GET /api/bookings/doctor/{id}`  |   ❌    |  ✅   |  ✅   |
+| `PUT /api/bookings/{id}/confirm` |   ❌    |  ✅   |  ✅   |
+
+> \*PATIENT hanya bisa cancel booking milik sendiri
+
+📖 **Detail lengkap:** [System Documentation](docs/SYSTEM_DOCUMENTATION.md)
+
+---
+
+## Booking Flow
+
+### Lifecycle
+
+```
+  [Patient/Staff]          [Staff]              [Anyone]
+       │                      │                    │
+       ▼                      │                    │
+   ┌────────┐                 │                    │
+   │PENDING │─────────────────┼────────────────────┤
+   └────┬───┘                 │                    │
+        │                     ▼                    ▼
+        │              ┌───────────┐        ┌───────────┐
+        └─────────────►│ CONFIRMED │        │ CANCELLED │
+                       └───────────┘        └───────────┘
+```
+
+### Status
+
+| Status      | Deskripsi           | Slot?     |
+| ----------- | ------------------- | --------- |
+| `PENDING`   | Menunggu konfirmasi | Blocked   |
+| `CONFIRMED` | Dikonfirmasi staff  | Blocked   |
+| `CANCELLED` | Dibatalkan          | Available |
+
+---
+
+## Entity Relationship (Simplified)
+
+```
+┌─────────┐     ┌─────────┐     ┌──────────┐
+│ clinics │◄────│ doctors │────►│ bookings │
+└─────────┘     └────┬────┘     └────┬─────┘
+                     │               │
+               ┌─────▼─────┐         │
+               │ schedules │    ┌────▼────┐
+               │ (M-F,time)│    │ patients│
+               └───────────┘    └────┬────┘
+                                     │
+                                ┌────▼────┐
+                                │  users  │
+                                │ (auth)  │
+                                └─────────┘
+```
+
+📖 **ERD lengkap dengan SQL:** [System Documentation](docs/SYSTEM_DOCUMENTATION.md#database-implementation)
+
+---
+
+## Security Implementation
+
+### JWT Token Flow
+
+```
+Client                    Server                   Database
+  │                          │                        │
+  │  POST /login             │                        │
+  │─────────────────────────►│  Verify password       │
+  │                          │───────────────────────►│
+  │  accessToken (15min)     │                        │
+  │  refreshToken (7d)       │  Store refresh token   │
+  │◄─────────────────────────│───────────────────────►│
+  │                          │                        │
+  │  API + accessToken       │                        │
+  │─────────────────────────►│  Validate (no DB)      │
+  │  Response                │                        │
+  │◄─────────────────────────│                        │
+  │                          │                        │
+  │  POST /refresh           │                        │
+  │─────────────────────────►│  Rotate token          │
+  │  New tokens              │───────────────────────►│
+  │◄─────────────────────────│                        │
+```
+
+### Security Features
+
+| Feature         | Implementasi                    |
+| --------------- | ------------------------------- |
+| Authentication  | JWT (access 15min + refresh 7d) |
+| Token Storage   | Refresh token di database       |
+| Rate Limiting   | 100 RPM global, 10 RPM auth     |
+| Account Lockout | 5x failed → 15min lock          |
+| Password        | BCrypt hashing                  |
+
+📖 **Detail implementasi:** [System Documentation](docs/SYSTEM_DOCUMENTATION.md#security-implementation)
+
+---
+
 ## Booking Conditions & Validation
 
 ### Kondisi Booking yang Valid
