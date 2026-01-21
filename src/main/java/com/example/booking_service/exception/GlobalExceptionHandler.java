@@ -117,15 +117,29 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
-        log.error("Data integrity violation: {}", ex.getMessage());
+        String message = ex.getMostSpecificCause().getMessage();
+        log.warn("Data integrity violation: {}", message);
         
-        // Check for unique constraint violation
-        if (ex.getMessage() != null && ex.getMessage().contains("duplicate")) {
+        // Check for booking double-booking race condition (unique index violation)
+        // This happens when two concurrent requests pass application checks but 
+        // the database unique index catches the duplicate
+        if (message != null && message.contains("uk_bookings_no_double")) {
+            log.warn("Double booking race condition caught by database constraint");
+            return ResponseEntity
+                    .status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.error(
+                            "This time slot was just booked by another user. Please select a different time.",
+                            "BOOKING_CONFLICT"));
+        }
+        
+        // Check for other duplicate key violations
+        if (message != null && (message.contains("duplicate") || message.contains("unique"))) {
             return ResponseEntity
                     .status(HttpStatus.CONFLICT)
                     .body(ApiResponse.error("Resource already exists", "DUPLICATE_ENTRY"));
         }
         
+        // Generic data integrity error
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error("Data integrity violation", "DATA_INTEGRITY_ERROR"));
