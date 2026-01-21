@@ -22,6 +22,7 @@ public class PageMeta {
     private int totalPages;
     private boolean hasNext;
     private boolean hasPrev;
+    private java.util.List<SortInfo> sort;
 
     @Data
     @Builder
