@@ -16,8 +16,8 @@ import lombok.NoArgsConstructor;
 public class PageMeta {
     
     private int page;
-    private int size;
-    private int count;
+    private int pageSize;
+    private int itemCount;
     private long totalItems;
     private int totalPages;
     private boolean hasNext;

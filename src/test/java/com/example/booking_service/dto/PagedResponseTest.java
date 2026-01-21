@@ -26,10 +26,10 @@ class PagedResponseTest {
         PagedResponse<String> response = PagedResponse.from(page, "/api/test");
 
         // Assert
-        assertThat(response.getData()).hasSize(3);
+        assertThat(response.getItems()).hasSize(3);
         assertThat(response.getMeta().getPage()).isEqualTo(0);
-        assertThat(response.getMeta().getSize()).isEqualTo(10);
-        assertThat(response.getMeta().getCount()).isEqualTo(3);
+        assertThat(response.getMeta().getPageSize()).isEqualTo(10);
+        assertThat(response.getMeta().getItemCount()).isEqualTo(3);
         assertThat(response.getMeta().getTotalItems()).isEqualTo(25);
         assertThat(response.getMeta().getTotalPages()).isEqualTo(3);
         assertThat(response.getMeta().isHasNext()).isTrue();
@@ -66,8 +66,8 @@ class PagedResponseTest {
         PagedResponse<String> response = PagedResponse.from(page, "/api/test");
 
         // Assert
-        assertThat(response.getData()).isEmpty();
-        assertThat(response.getMeta().getCount()).isEqualTo(0);
+        assertThat(response.getItems()).isEmpty();
+        assertThat(response.getMeta().getItemCount()).isEqualTo(0);
         assertThat(response.getMeta().getTotalItems()).isEqualTo(0);
         assertThat(response.getMeta().getTotalPages()).isEqualTo(0);
         assertThat(response.getMeta().isHasNext()).isFalse();

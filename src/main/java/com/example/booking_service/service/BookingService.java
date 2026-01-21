@@ -54,9 +54,18 @@ public class BookingService {
             throw new IllegalArgumentException("Doctor is not available for booking");
         }
 
-        // Validate booking date (must be in the future)
-        if (request.getBookingDate().isBefore(LocalDate.now())) {
-            throw new IllegalArgumentException("Booking date must be in the future");
+        // Validate booking date (cannot be in the past)
+        LocalDate today = LocalDate.now();
+        if (request.getBookingDate().isBefore(today)) {
+            throw new IllegalArgumentException("Booking date cannot be in the past");
+        }
+
+        // For same-day booking, validate that slot time hasn't passed
+        if (request.getBookingDate().equals(today)) {
+            LocalTime now = LocalTime.now();
+            if (request.getSlotStartTime().isBefore(now)) {
+                throw new IllegalArgumentException("Cannot book a time slot that has already passed");
+            }
         }
 
         // Validate booking date (max 90 days ahead)
@@ -76,17 +85,40 @@ public class BookingService {
 
         // Find the applicable schedule and STRICTLY validate the time slot alignment
         DoctorSchedule applicableSchedule = null;
+        boolean isWithinAnySchedule = false;
+        
         for (DoctorSchedule schedule : schedules) {
-            // Check if requested time is EXACTLY on the slot grid (not arbitrary like 10:15)
-            if (isValidSlotTime(request.getSlotStartTime(), schedule)) {
-                applicableSchedule = schedule;
-                break;
+            // First check: Is the time within schedule hours?
+            if (!request.getSlotStartTime().isBefore(schedule.getStartTime()) &&
+                request.getSlotStartTime().isBefore(schedule.getEndTime())) {
+                isWithinAnySchedule = true;
+                
+                // Second check: Is the time EXACTLY on the slot grid?
+                if (isValidSlotTime(request.getSlotStartTime(), schedule)) {
+                    applicableSchedule = schedule;
+                    break;
+                }
             }
         }
 
         if (applicableSchedule == null) {
-            throw new IllegalArgumentException(
-                    "Requested time slot is not valid. Slots must start at scheduled intervals (e.g., 09:00, 09:30, 10:00)");
+            if (!isWithinAnySchedule) {
+                // Time is completely outside doctor's schedule hours
+                DoctorSchedule firstSchedule = schedules.get(0);
+                throw new IllegalArgumentException(
+                        String.format("Doctor is not available at %s. Schedule for this day is %s to %s",
+                                request.getSlotStartTime(),
+                                firstSchedule.getStartTime(),
+                                firstSchedule.getEndTime()));
+            } else {
+                // Time is within hours but not on slot interval (e.g., 13:15 instead of 13:00 or 13:30)
+                DoctorSchedule firstSchedule = schedules.get(0);
+                throw new IllegalArgumentException(
+                        String.format("Invalid slot time. Appointments must start at %d-minute intervals (e.g., %s, %s)",
+                                firstSchedule.getSlotDurationMinutes(),
+                                firstSchedule.getStartTime(),
+                                firstSchedule.getStartTime().plusMinutes(firstSchedule.getSlotDurationMinutes())));
+            }
         }
 
         LocalTime slotEndTime = request.getSlotStartTime().plusMinutes(applicableSchedule.getSlotDurationMinutes());

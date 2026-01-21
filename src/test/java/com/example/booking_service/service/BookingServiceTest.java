@@ -238,7 +238,7 @@ class BookingServiceTest {
         // Act & Assert
         assertThatThrownBy(() -> bookingService.createBooking(request, userId))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("scheduled intervals");
+                .hasMessageContaining("minute intervals");
     }
 
     @Test

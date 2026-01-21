@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class PagedResponse<T> {
     
-    private List<T> data;
+    private List<T> items;
     private PageMeta meta;
     private PageLinks links;
 
@@ -30,14 +30,14 @@ public class PagedResponse<T> {
      */
     public static <T> PagedResponse<T> from(Page<T> page, String basePath) {
         int currentPage = page.getNumber();
-        int size = page.getSize();
+        int pageSize = page.getSize();
         int totalPages = page.getTotalPages();
 
         // Build meta
         PageMeta meta = PageMeta.builder()
                 .page(currentPage)
-                .size(size)
-                .count(page.getNumberOfElements())
+                .pageSize(pageSize)
+                .itemCount(page.getNumberOfElements())
                 .totalItems(page.getTotalElements())
                 .totalPages(totalPages)
                 .hasNext(page.hasNext())
@@ -51,12 +51,12 @@ public class PagedResponse<T> {
         String sortParam = sortQuery.isEmpty() ? "" : "&sort=" + sortQuery;
 
         // Build links
-        String selfUrl = String.format("%s?page=%d&size=%d%s", basePath, currentPage, size, sortParam);
+        String selfUrl = String.format("%s?page=%d&pageSize=%d%s", basePath, currentPage, pageSize, sortParam);
         String nextUrl = page.hasNext() 
-                ? String.format("%s?page=%d&size=%d%s", basePath, currentPage + 1, size, sortParam) 
+                ? String.format("%s?page=%d&pageSize=%d%s", basePath, currentPage + 1, pageSize, sortParam) 
                 : null;
         String prevUrl = page.hasPrevious() 
-                ? String.format("%s?page=%d&size=%d%s", basePath, currentPage - 1, size, sortParam) 
+                ? String.format("%s?page=%d&pageSize=%d%s", basePath, currentPage - 1, pageSize, sortParam) 
                 : null;
 
         PageLinks links = PageLinks.builder()
@@ -66,7 +66,7 @@ public class PagedResponse<T> {
                 .build();
 
         return PagedResponse.<T>builder()
-                .data(page.getContent())
+                .items(page.getContent())
                 .meta(meta)
                 .links(links)
                 .build();
