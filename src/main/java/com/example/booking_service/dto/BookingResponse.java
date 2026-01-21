@@ -2,6 +2,7 @@ package com.example.booking_service.dto;
 
 import com.example.booking_service.entity.BookingStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,9 +24,16 @@ import java.util.UUID;
 public class BookingResponse {
 
     private UUID id;
+    
+    @Schema(description = "Booking date", example = "2026-01-23", type = "string", format = "date")
     private LocalDate bookingDate;
+    
+    @Schema(description = "Slot start time", example = "09:00:00", type = "string", format = "time")
     private LocalTime slotStartTime;
+    
+    @Schema(description = "Slot end time", example = "09:30:00", type = "string", format = "time")
     private LocalTime slotEndTime;
+    
     private BookingStatus status;
     private String notes;
     private OffsetDateTime createdAt;
