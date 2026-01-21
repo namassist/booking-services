@@ -6,7 +6,7 @@ REST API untuk sistem booking klinik online dengan autentikasi JWT, otorisasi be
 
 - **Autentikasi JWT** dengan access/refresh token dan token rotation
 - **Otorisasi Role-based** (ADMIN, STAFF, PATIENT)
-- **Pencegahan Double Booking** (2-layer: pessimistic locking + database constraint)
+- **Pencegahan Double Booking** (3-layer: slot validation + pessimistic locking + database constraint)
 - **Rate Limiting** (100 req/menit global, 10 req/menit untuk login)
 - **Account Lockout** (kunci akun setelah 5x login gagal)
 - **Correlation ID** untuk request tracing
@@ -197,14 +197,18 @@ Aplikasi menggunakan **Flyway** untuk database migration. Migration dijalankan o
 
 Untuk membuat booking, semua kondisi berikut harus terpenuhi:
 
-| Kondisi             | Deskripsi                            | Error Jika Gagal                                         |
-| ------------------- | ------------------------------------ | -------------------------------------------------------- |
-| **Dokter aktif**    | `doctor.isActive = true`             | "Doctor is not available for booking"                    |
-| **Tanggal valid**   | Tidak di masa lalu                   | "Booking date must be in the future"                     |
-| **Maks 90 hari**    | Tidak lebih dari 90 hari ke depan    | "Booking date cannot be more than 90 days in the future" |
-| **Jadwal tersedia** | Dokter punya jadwal di hari tersebut | "Doctor is not available on this day"                    |
-| **Slot aligned**    | Waktu harus tepat pada grid jadwal   | "Slots must start at scheduled intervals"                |
-| **Tidak overlap**   | Tidak bentrok dengan booking lain    | "This time slot conflicts with an existing booking"      |
+| Kondisi              | Deskripsi                                | Error Jika Gagal                                         |
+| -------------------- | ---------------------------------------- | -------------------------------------------------------- |
+| **Dokter aktif**     | `doctor.isActive = true`                 | "Doctor is not available for booking"                    |
+| **Tanggal valid**    | Hari ini atau masa depan                 | "Booking date cannot be in the past"                     |
+| **Slot belum lewat** | Jika hari ini, waktu harus di masa depan | "Cannot book a time slot that has already passed"        |
+| **Maks 90 hari**     | Tidak lebih dari 90 hari ke depan        | "Booking date cannot be more than 90 days in the future" |
+| **Jadwal tersedia**  | Dokter punya jadwal di hari tersebut     | "Doctor is not available on this day"                    |
+| **Dalam jam kerja**  | Waktu dalam jadwal dokter                | "Doctor is not available at X. Schedule is Y to Z"       |
+| **Slot aligned**     | Waktu harus tepat pada grid jadwal       | "Appointments must start at N-minute intervals"          |
+| **Tidak overlap**    | Tidak bentrok dengan booking lain        | "This time slot conflicts with an existing booking"      |
+
+> **Note:** Same-day booking diizinkan selama slot belum lewat.
 
 ### Slot Alignment Validation
 
@@ -330,9 +334,10 @@ User A dan B klik booking 09:00 di waktu yang PERSIS sama
 [Layer 3] Database Constraint
     ↓ User A: INSERT → Success ✓
     ↓ User B: INSERT → ❌ UNIQUE CONSTRAINT VIOLATION
-    ↓ Error ditangkap → "Slot just became unavailable"
+    ↓ GlobalExceptionHandler mendeteksi "uk_bookings_no_double"
+    ↓ Return 409 Conflict: "This time slot was just booked by another user"
 
-Hasil: User A berhasil, User B gagal dengan pesan error yang jelas
+Hasil: User A berhasil, User B gagal dengan pesan error yang user-friendly
 ```
 
 #### Ringkasan
@@ -388,6 +393,47 @@ Hasil: User A berhasil, User B gagal dengan pesan error yang jelas
 | PUT    | `/api/bookings/{id}/confirm`                | Staff, Admin                | Konfirmasi booking           |
 
 Dokumentasi lengkap tersedia di **Swagger UI**: `/swagger-ui.html`
+
+---
+
+## Paginated Response Format
+
+Semua endpoint yang mengembalikan list menggunakan format pagination standar:
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [...],
+    "meta": {
+      "page": 0,
+      "pageSize": 10,
+      "itemCount": 5,
+      "totalItems": 25,
+      "totalPages": 3,
+      "hasNext": true,
+      "hasPrev": false
+    },
+    "links": {
+      "self": "/api/doctors?page=0&pageSize=10&sort=name,asc",
+      "next": "/api/doctors?page=1&pageSize=10&sort=name,asc",
+      "prev": null
+    }
+  },
+  "timestamp": "2026-01-22T06:00:00+07:00"
+}
+```
+
+| Field             | Deskripsi                       |
+| ----------------- | ------------------------------- |
+| `items`           | Array of data items             |
+| `meta.page`       | Current page number (0-indexed) |
+| `meta.pageSize`   | Items per page                  |
+| `meta.itemCount`  | Items in current page           |
+| `meta.totalItems` | Total items across all pages    |
+| `meta.totalPages` | Total number of pages           |
+| `meta.hasNext`    | Has next page                   |
+| `meta.hasPrev`    | Has previous page               |
 
 ---
 
