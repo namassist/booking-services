@@ -94,7 +94,7 @@ public class AuthService {
      * Authenticate a user and return tokens.
      * Implements account lockout after too many failed attempts.
      */
-    @Transactional
+    @Transactional(noRollbackFor = BadCredentialsException.class)
     public AuthResponse login(LoginRequest request) {
         // Find user first to check lockout status
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
