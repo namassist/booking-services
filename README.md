@@ -33,7 +33,7 @@ REST API untuk sistem booking klinik online dengan autentikasi JWT, otorisasi be
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-username/booking-service.git
+git clone https://github.com/namassist/booking-services.git
 cd booking-service
 ```
 
